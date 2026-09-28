@@ -541,12 +541,12 @@
         
         <div id="gameSelectionScreen" class="game-selection hidden">
             <div class="card-selection-title">🎮 SELECT GAME</div>
-            <div class="game-select-btn" onclick="startBingoGame()">
+            <div class="game-select-btn" onclick="unlockAudio(); startBingoGame()">
                 <div class="game-select-icon">🎯</div>
                 <div class="game-select-title">BINGO</div>
                 <div class="game-select-desc">10 ETB per card • Multiplayer</div>
             </div>
-            <div class="game-select-btn" onclick="startKenoGame()">
+            <div class="game-select-btn" onclick="unlockAudio(); startKenoGame()">
                 <div class="game-select-icon">🎰</div>
                 <div class="game-select-title">FAST KENO 8</div>
                 <div class="game-select-desc">Pick 2-6 numbers • Fast draw</div>
@@ -908,50 +908,155 @@
         let userTotalWon = 0;
         let recentHistory = [];
 
-        // ============ SOUND MANAGER (UPDATED for MP3 files) ============
+        // ==================================================
+        // ============ SOUND ENGINE (FIXED) ================
+        // ==================================================
+        // Design goals:
+        //  1. Preload all 77 mp3 files (75 numbers + bingo + notify) up front.
+        //  2. Unlock audio on the first user gesture (Telegram WebApp / iOS Safari
+        //     require this before non-gesture sounds can play).
+        //  3. Play each number sound independently — do not share a small pool
+        //     that gets cut off when the next number arrives.
+        //  4. Silently retry if a play() call rejects.
+        // ==================================================
+
+        const ALL_NUMBER_FILES = (() => {
+            const arr = [];
+            for (let i = 1; i <= 15; i++) arr.push(`b-${i}.mp3`);
+            for (let i = 16; i <= 30; i++) arr.push(`i-${i}.mp3`);
+            for (let i = 31; i <= 45; i++) arr.push(`n-${i}.mp3`);
+            for (let i = 46; i <= 60; i++) arr.push(`g-${i}.mp3`);
+            for (let i = 61; i <= 75; i++) arr.push(`o-${i}.mp3`);
+            return arr;
+        })();
+
         const AudioManager = {
-            players: [], currentIndex: 0, soundCache: new Map(), maxPlayers: 6,
+            cache: new Map(),        // filename → HTMLAudioElement
+            unlocked: false,         // has a user gesture unlocked audio?
+            pendingQueue: [],        // files that failed to play pre-unlock
+
             init() {
-                for (let i = 0; i < this.maxPlayers; i++) {
-                    const a = new Audio(); a.preload = 'auto'; a.volume = 0.8; this.players.push(a);
+                // Pre-create an <audio> element for every sound so the browser
+                // fetches and decodes them eagerly. We reuse each element for its
+                // own file — no shared pool, so sounds never cut each other off.
+                const allFiles = [...ALL_NUMBER_FILES, 'bingo.mp3', 'notify.mp3'];
+                for (const file of allFiles) {
+                    const a = new Audio();
+                    a.preload = 'auto';
+                    a.volume = 0.85;
+                    a.src = `${SOUNDS_PATH}${file}`;
+                    a.load();
+                    this.cache.set(file, a);
                 }
-                // Preload key sounds
-                for (const s of ['notify.mp3','bingo.mp3']) this.preload(s);
+                // Try to fetch a couple as blobs for faster first play on iOS
+                this.preloadAsBlob('notify.mp3');
+                this.preloadAsBlob('bingo.mp3');
+                console.log(`🔊 AudioManager ready: ${allFiles.length} files preloaded`);
             },
-            getNextPlayer() { const p = this.players[this.currentIndex]; this.currentIndex = (this.currentIndex + 1) % this.maxPlayers; return p; },
-            async preload(f) {
-                if (this.soundCache.has(f)) return;
-                try { const r = await fetch(`${SOUNDS_PATH}${f}`); if (r.ok) this.soundCache.set(f, URL.createObjectURL(await r.blob())); } catch(e){}
+
+            async preloadAsBlob(file) {
+                try {
+                    const r = await fetch(`${SOUNDS_PATH}${file}`);
+                    if (!r.ok) return;
+                    const blob = await r.blob();
+                    const url = URL.createObjectURL(blob);
+                    const el = this.cache.get(file);
+                    if (el) el.src = url;
+                } catch (e) { /* silent */ }
             },
-            async play(f, o={}) {
-                const {volume=0.8,loop=false} = o;
-                const url = this.soundCache.get(f) || `${SOUNDS_PATH}${f}`;
-                const p = this.getNextPlayer();
-                p.src = url; p.volume = volume; p.loop = loop; p.currentTime = 0;
-                try { await p.play(); return p; } catch(e) { return null; }
+
+            // Called once on the first user click. Plays a 1ms silent sound on every
+            // cached element — that "unlocks" each element for later programmatic play.
+            unlock() {
+                if (this.unlocked) return;
+                this.unlocked = true;
+                console.log('🔓 Unlocking audio elements…');
+                for (const el of this.cache.values()) {
+                    try {
+                        el.muted = true;
+                        const p = el.play();
+                        if (p && p.then) {
+                            p.then(() => {
+                                el.pause();
+                                el.currentTime = 0;
+                                el.muted = false;
+                            }).catch(() => { el.muted = false; });
+                        } else {
+                            el.pause();
+                            el.currentTime = 0;
+                            el.muted = false;
+                        }
+                    } catch (e) { /* ignore */ }
+                }
+                // Now flush anything that tried to play before unlock
+                const q = this.pendingQueue.slice();
+                this.pendingQueue.length = 0;
+                q.forEach(f => this.play(f));
             },
-            stopAll() { this.players.forEach(p => { p.pause(); p.currentTime = 0; }); }
+
+            async play(file, opts = {}) {
+                const { volume = 0.85 } = opts;
+                const el = this.cache.get(file);
+                if (!el) {
+                    // Fallback: not preloaded, create a one-off audio
+                    try {
+                        const a = new Audio(`${SOUNDS_PATH}${file}`);
+                        a.volume = volume;
+                        await a.play();
+                    } catch (e) { /* silent */ }
+                    return;
+                }
+                try {
+                    el.pause();
+                    el.currentTime = 0;
+                    el.volume = volume;
+                    const p = el.play();
+                    if (p && p.catch) {
+                        await p.catch(err => {
+                            // NotAllowedError → user gesture missing. Queue for later.
+                            if (err && err.name === 'NotAllowedError' && !this.unlocked) {
+                                this.pendingQueue.push(file);
+                            }
+                        });
+                    }
+                } catch (e) { /* silent */ }
+            },
+
+            stopAll() {
+                for (const el of this.cache.values()) {
+                    try { el.pause(); el.currentTime = 0; } catch (e) {}
+                }
+            }
         };
         AudioManager.init();
 
-        // Plays the correct MP3 for a called number using "letter-number.mp3" format
+        // Plays the MP3 for a called number: "letter-number.mp3"
         // Example: B-1.mp3, I-16.mp3, N-40.mp3, G-52.mp3, O-75.mp3
-        async function playNumberSound(letter, number) {
+        function playNumberSound(letter, number) {
             const upperLetter = (letter || '').toUpperCase();
             const filename = `${upperLetter}-${number}.mp3`;
-            await AudioManager.play(filename, { volume: 0.75 });
+            AudioManager.play(filename, { volume: 0.85 });
         }
 
         // Plays the winner sound (bingo.mp3)
-        async function playWinnerSound() {
+        function playWinnerSound() {
             AudioManager.stopAll();
-            await AudioManager.play('bingo.mp3', { volume: 1.0 });
+            AudioManager.play('bingo.mp3', { volume: 1.0 });
         }
 
-        // Plays the start/notification sound (notify.mp3)
-        async function playStartSound() {
-            await AudioManager.play('notify.mp3', { volume: 0.9 });
+        // Plays the game-start notification sound (notify.mp3)
+        function playStartSound() {
+            AudioManager.play('notify.mp3', { volume: 0.9 });
         }
+
+        // Public — call this from any user click handler on the page.
+        // Once called, all number sounds will play automatically.
+        function unlockAudio() {
+            AudioManager.unlock();
+        }
+        window.unlockAudio = unlockAudio;
+
+        // ==================================================
 
         function showReloadOverlay() { document.getElementById('reloadOverlay').classList.remove('hidden'); }
         function autoReloadGame() {
@@ -1036,9 +1141,20 @@
             } catch(e) {}
 
             showGame();
-            if (autoStartBingo) startBingoGame(); else showGameSelection();
+            if (autoStartBingo) { unlockAudio(); startBingoGame(); } else showGameSelection();
             setTimeout(() => showPopup(`✅ Welcome ${firstName}!`), 500);
             initSocket();
+
+            // Global first-tap unlocker as a safety net (any click on the page unlocks audio)
+            const unlockOnce = () => {
+                unlockAudio();
+                document.removeEventListener('pointerdown', unlockOnce);
+                document.removeEventListener('touchstart', unlockOnce);
+                document.removeEventListener('click', unlockOnce);
+            };
+            document.addEventListener('pointerdown', unlockOnce, { once: true });
+            document.addEventListener('touchstart', unlockOnce, { once: true });
+            document.addEventListener('click', unlockOnce, { once: true });
         }
 
         function showGameSelection() {
@@ -1087,12 +1203,12 @@
         }
 
         function startBingoGame() {
+            unlockAudio();  // safety — ensure audio is unlocked
             currentGame = 'bingo';
             document.getElementById('gameSelectionScreen').classList.add('hidden');
             document.getElementById('bingoSection').classList.remove('hidden');
             document.getElementById('kenoSection').classList.add('hidden');
             document.getElementById('currentGameDisplay').textContent = '🎯 BINGO';
-            // Reset to Game tab
             bingoSwitchTab('game');
             resetBingoGameState();
             buildCardsGrid();
@@ -1105,6 +1221,7 @@
         }
 
         function startKenoGame() {
+            unlockAudio();  // safety — ensure audio is unlocked
             currentGame = 'keno';
             document.getElementById('gameSelectionScreen').classList.add('hidden');
             document.getElementById('bingoSection').classList.add('hidden');
@@ -1130,21 +1247,17 @@
 
         // ================= ARADA BINGO TAB SWITCHER =================
         function bingoSwitchTab(tab) {
-            // Hide all sub-pages
             ['game','scores','history','wallet','profile'].forEach(t => {
                 const el = document.getElementById('bingoPage' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.classList.add('hidden');
             });
-            // Show requested page
             const target = document.getElementById('bingoPage' + tab.charAt(0).toUpperCase() + tab.slice(1));
             if (target) target.classList.remove('hidden');
 
-            // Update nav active states
             document.querySelectorAll('#bingoSection .bingo-nav-item').forEach(b => {
                 b.classList.toggle('active', b.dataset.tab === tab);
             });
 
-            // Update brand text per tab
             const brand = document.getElementById('bingoBrand');
             if (brand) {
                 const names = {
@@ -1157,7 +1270,6 @@
                 brand.textContent = names[tab] || 'Arada Bingo';
             }
 
-            // Refresh page data
             if (tab === 'scores') updateScoresPage();
             if (tab === 'history') updateHistoryPage();
             if (tab === 'wallet') updateWalletPage();
@@ -1177,7 +1289,6 @@
             const s2 = document.getElementById('scoreName2');
             const s3 = document.getElementById('scoreName3');
             const won = document.getElementById('myGamesWon');
-            // Show the current player as rank 1 if they have wins, otherwise placeholders
             if (userGamesWon > 0) {
                 s1.textContent = firstName + ' (' + userGamesWon + ' wins)';
                 s2.textContent = '—';
@@ -1466,7 +1577,6 @@
             hasJoinedRoom = true;
             if (socket?.connected) {
                 socket.emit('join_game', { userId: telegramId, roomId: currentRoomId, userData: { firstName, balance } });
-                // Start countdown immediately even if no cards selected yet
                 checkAndStartCountdown();
             } else {
                 hasJoinedRoom = false;
@@ -1482,7 +1592,7 @@
                 b.className = 'card-btn'; b.textContent = i;
                 if (myCards.some(x => x.id === i)) b.classList.add('owned');
                 else if (takenCards.has(i)) { b.classList.add('taken'); b.textContent = i + ' ✗'; }
-                b.onclick = () => purchaseCard(i);
+                b.onclick = () => { unlockAudio(); purchaseCard(i); };
                 c.appendChild(b);
             }
             updateCardCounter();
@@ -1491,7 +1601,6 @@
             document.getElementById('selectedCardCount').textContent = `${myCards.length}/2`;
             document.getElementById('cardCount').textContent = myCards.length;
             document.getElementById('myCardsCount').textContent = myCards.length;
-            // Ensure local player counts toward playersWithCards
             if (myCards.length > 0 && playersWithCards < 1) {
                 playersWithCards = Math.max(playersWithCards, 1);
             }
@@ -1570,10 +1679,8 @@
                 localCountdown--;
                 if (localCountdown <= 0) {
                     stopCountdown();
-                    // If no player has selected any cards, restart countdown again
                     if (playersWithCards < 1 && myCards.length < 1 && !gameStarted) {
                         countdownAlreadyStarted = false;
-                        // small delay then restart countdown
                         setTimeout(() => {
                             if (sess === gameSessionId && !gameStarted) {
                                 startLocalCountdown(COUNTDOWN_START);
@@ -1682,7 +1789,6 @@
             document.getElementById('winnerModal').classList.remove('hidden');
             playWinnerSound();
 
-            // Record stats
             userGamesWon++;
             userTotalWon += d;
             recentHistory.unshift({
@@ -1827,7 +1933,7 @@
                 });
                 socket.on('game_seed', d => { if (d.roomId === currentRoomId) { roomSeed = d.seed; startCallingNumbers(); } });
                 socket.on('number_called', d => {
-                    if (d.roomId === currentRoomId && currentGame === 'bingo') { processCalledNumber(d.letter, d.number); playNumberSound(d.letter, d.number); }
+                    if (d.roomId === currentRoomId && currentGame === 'bingo') { playNumberSound(d.letter, d.number); processCalledNumber(d.letter, d.number); }
                 });
                 socket.on('winner_announced', d => {
                     if (d.roomId === currentRoomId) {
@@ -1849,7 +1955,7 @@
                 });
             } catch(e) { console.error('Socket init error:', e); }
         }
-        document.getElementById('resetBtn').addEventListener('click', resetAllCards);
+        document.getElementById('resetBtn').addEventListener('click', () => { unlockAudio(); resetAllCards(); });
         function resetAllCards() {
             if (myCards.length === 0) return;
             const refund = myCards.length * BET_AMOUNT;
@@ -1864,7 +1970,6 @@
             stopCountdown();
             updateWalletPage();
             showPopup(`🔄 Refunded ${refund} ETB - Balance will update from server`);
-            // Restart countdown since no cards are selected now
             if (!gameStarted) {
                 countdownAlreadyStarted = false;
                 checkAndStartCountdown();
