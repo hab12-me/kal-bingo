@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="tiktok-developers-site-verification" content="WLxQ7W8VHmQqyd6jOsvLi3D3F1U0HSmb">
+    <title>Arada Bingo – Multiplayer</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #ffffff; min-height: 100vh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); overflow-x: hidden; }
+        .container { max-width: 100%; padding: 4px; }
+        .header { text-align: center; margin-bottom: 4px; }
+        .logo { font-size: 16px; font-weight: 800; background: linear-gradient(135deg, #00d4ff, #ff6b6b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .game-id-badge { display:inline-block; background: rgba(255,215,0,0.15); color:#ffd700; padding:2px 6px; border-radius:10px; font-size:9px; margin-left:4px; border:1px solid rgba(255,215,0,0.4); }
+        .stats-row { display: flex; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+        .stat-card { flex: 1; min-width: 60px; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(10px); border-radius: 10px; padding: 6px; text-align: center; border: 1px solid rgba(255, 255, 255, 0.1); }
+        .stat-label { font-size: 7px; color: #aaaaaa; margin-bottom: 2px; }
+        .stat-value { font-size: 12px; font-weight: bold; color: #00d4ff; }
+        .btn { width: 100%; padding: 8px; border: none; border-radius: 10px; font-weight: bold; font-size: 12px; cursor: pointer; }
+        .btn-primary { background: #2ecc71; color: white; }
+        .btn-secondary { background: rgba(255, 255, 255, 0.1); color: white; }
+        .popup { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.9); padding: 8px 16px; border-radius: 40px; font-size: 12px; z-index: 1000; display: none; max-width: 90%; text-align: center; }
+        .hidden { display: none !important; }
+        .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
+        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1); border-top: 4px solid #ffd700; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
+        .game-selection { display: flex; flex-direction: column; gap: 15px; padding: 20px; max-width: 500px; margin: 0 auto; }
+        .card-selection-title { font-size: 14px; font-weight: 800; color: #ffd700; text-align: center; margin-bottom: 6px; }
+        .game-select-btn { background: linear-gradient(135deg, #242836, #343a4b); border: 2px solid #ffd700; border-radius: 16px; padding: 25px; cursor: pointer; transition: all 0.3s ease; text-align: center; }
+        .game-select-btn:active { transform: scale(0.95); }
+        .game-select-btn:hover { border-color: #fff; box-shadow: 0 0 20px rgba(255, 215, 0, 0.3); }
+        .game-select-icon { font-size: 50px; margin-bottom: 10px; }
+        .game-select-title { font-size: 20px; font-weight: 800; color: #ffd700; margin-bottom: 5px; }
+        .game-select-desc { font-size: 12px; color: #aaa; }
+        .reload-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 4000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .reload-spinner { width: 60px; height: 60px; border: 5px solid rgba(255,255,255,0.1); border-top: 5px solid #ffd700; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        .reload-text { color: #ffd700; font-size: 18px; font-weight: bold; }
+
+        /* =====================================================
+           BINGO — Arada Bingo style
+           ===================================================== */
+        #bingoSection {
+            background:
+                radial-gradient(circle at 50% 0%, rgba(147, 51, 234, 0.22), transparent 55%),
+                #0f172a;
+            min-height: 100vh;
+            padding-bottom: 80px;
+            position: relative;
+        }
+        #bingoSection .bingo-topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 16px 8px;
+        }
+        #bingoSection .bingo-brand {
+            font-size: 15px; font-weight: 900; letter-spacing: -0.03em;
+            text-transform: uppercase; color: #ffffff;
+        }
+        #bingoSection .bingo-rules-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff; font-size: 10px; font-weight: 800;
+            padding: 8px 16px; border-radius: 999px; cursor: pointer;
+        }
+        #bingoSection .bingo-rules-btn:active { transform: scale(0.94); }
+        #bingoSection .bingo-hero {
+            display: flex; flex-direction: column; align-items: center;
+            text-align: center; padding: 4px 16px 10px;
+        }
+        #bingoSection .bingo-hero-welcome {
+            font-size: 12px; color: rgba(255,255,255,0.8); margin-bottom: 4px;
+        }
+        #bingoSection .bingo-hero-title {
+            font-size: 34px; font-weight: 900; letter-spacing: -0.05em;
+            text-transform: uppercase;
+            background: linear-gradient(180deg, #fef3c7 0%, #facc15 50%, #d97706 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #bingoSection .bingo-room-header {
+            margin: 0 16px 10px;
+            text-align: center; font-size: 11px; font-weight: 800;
+            color: #facc15; padding: 8px;
+            background: rgba(250,204,21,0.1);
+            border: 1px solid rgba(250,204,21,0.3);
+            border-radius: 14px;
+        }
+        #bingoSection .stats-row { padding: 0 16px; }
+        #bingoSection .stat-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px; backdrop-filter: blur(12px);
+        }
+        #bingoSection .stat-label { color: rgba(255,255,255,0.4); letter-spacing: 0.15em; }
+        #bingoSection .stat-value { color: #ffffff; }
+        #bingoSection .prize-pool-card {
+            background: linear-gradient(135deg, rgba(217,119,6,0.22), rgba(180,83,9,0.1));
+            border: 1px solid rgba(250,204,21,0.35);
+        }
+        #bingoSection .prize-pool-card .stat-value { color: #facc15; }
+        #bingoSection .players-online-card {
+            background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(5,150,105,0.08));
+            border: 1px solid rgba(16,185,129,0.35);
+        }
+        #bingoSection .players-online-card .stat-value { color: #34d399; }
+        #bingoSection .section {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 18px;
+            margin: 0 16px 10px;
+            padding: 12px;
+        }
+        #bingoSection .section-title {
+            color: rgba(255,255,255,0.5);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 800;
+            font-size: 10px;
+            margin-bottom: 8px;
+        }
+        #bingoSection .card-selection-highlight {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            margin: 0 16px 10px;
+            padding: 12px;
+        }
+        #bingoSection .card-selection-title {
+            color: #ffffff;
+            font-weight: 900;
+            letter-spacing: -0.01em;
+            text-transform: uppercase;
+            font-size: 13px;
+            text-align: center;
+            margin-bottom: 6px;
+        }
+        #bingoSection .card-counter-badge {
+            display: inline-block;
+            background: #10b981; color: #052e16;
+            padding: 3px 10px; border-radius: 999px;
+            font-size: 10px; font-weight: 900;
+            margin-left: 4px;
+        }
+        #bingoSection .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+            padding: 6px;
+            background: rgba(0,0,0,0.35);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            max-height: 260px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #bingoSection .card-btn {
+            width: 100%; aspect-ratio: 1;
+            background: rgba(232,232,232,0.1);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 11px; font-weight: 800;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #bingoSection .card-btn:active { transform: scale(0.92); }
+        #bingoSection .card-btn.owned {
+            background: #10b981; border-color: #34d399;
+            color: #052e16; cursor: default; opacity: 1;
+        }
+        #bingoSection .card-btn.taken {
+            background: #ea580c; border-color: #fb923c;
+            color: #ffffff; cursor: not-allowed; opacity: 0.85;
+        }
+        #bingoSection .countdown {
+            text-align: center;
+            padding: 10px;
+            background: linear-gradient(135deg, rgba(16,185,129,0.18), rgba(5,150,105,0.06));
+            border: 2px solid rgba(16,185,129,0.5);
+            border-radius: 20px;
+            margin-top: 8px;
+        }
+        #bingoSection .countdown-number {
+            font-size: 40px; font-weight: 900; color: #34d399;
+            animation: pulse 1s ease infinite;
+        }
+        @keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.15);} }
+        #bingoSection .action-buttons {
+            display: flex; gap: 6px; margin-top: 8px;
+        }
+        #bingoSection .action-buttons .btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            font-weight: 900;
+            letter-spacing: 0.05em;
+            color: #fff;
+        }
+        #bingoSection .players-list-section {
+            display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+        }
+        #bingoSection .player-badge {
+            background: rgba(16,185,129,0.15);
+            border: 1px solid rgba(16,185,129,0.4);
+            color: #a7f3d0; font-weight: 700;
+            border-radius: 999px; padding: 2px 10px; font-size: 10px;
+        }
+
+        /* Bingo game interface */
+        #bingoSection .game-interface {
+            background: #0b1220;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 22px;
+            margin: 0 16px;
+            padding: 12px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.55);
+            display: flex; flex-direction: column; gap: 10px;
+            max-width: 100%;
+        }
+        #bingoSection .info-bar {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            font-size: 10px; padding: 4px 0 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        #bingoSection .info-item {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 3px; flex: 1;
+        }
+        #bingoSection .info-label {
+            color: rgba(255,255,255,0.4);
+            font-weight: 800; letter-spacing: 0.15em;
+            text-transform: uppercase; font-size: 7px;
+        }
+        #bingoSection .info-value {
+            color: #ffffff; font-weight: 900; font-size: 12px;
+        }
+        #bingoSection .main-layout {
+            display: flex; gap: 8px;
+        }
+        #bingoSection .grid-section {
+            flex: 1; display: flex; flex-direction: column; gap: 6px;
+        }
+        #bingoSection .bingo-header {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
+        }
+        #bingoSection .header-cell {
+            border-radius: 6px; height: 32px;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 14px; font-weight: 900;
+        }
+        #bingoSection .header-cell.b-blue { background: #2b88ff; color: #fff; }
+        #bingoSection .header-cell.i-purple { background: #6b72ff; color: #fff; }
+        #bingoSection .header-cell.n-teal { background: #c547ff; color: #fff; }
+        #bingoSection .header-cell.g-orange { background: #00d68f; color: #fff; }
+        #bingoSection .header-cell.o-red { background: #ff7b1c; color: #fff; }
+        #bingoSection .bingo-grid {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
+        }
+        #bingoSection .number-cell {
+            background: rgba(232,232,232,0.08);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px;
+            height: 26px;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 11px; font-weight: 800;
+            color: rgba(255,255,255,0.55);
+        }
+        #bingoSection .number-cell.called {
+            background: #10b981;
+            border-color: #34d399;
+            color: #ffffff;
+        }
+        #bingoSection .number-cell.orange {
+            background: #10b981;
+            border-color: #34d399;
+            color: #ffffff;
+            animation: none;
+        }
+        #bingoSection .side-panel {
+            width: 110px; display: flex; flex-direction: column; gap: 6px;
+        }
+        #bingoSection .top-numbers {
+            display: flex; gap: 3px; flex-wrap: wrap;
+        }
+        #bingoSection .top-pill {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 999px; padding: 3px 8px;
+            font-size: 9px; font-weight: 900;
+            display: flex; align-items: center; gap: 3px;
+            color: #fff;
+        }
+        #bingoSection .top-pill.green { background: #10b981; border-color: #34d399; color: #052e16; }
+        #bingoSection .top-pill.pink { background: #ea580c; border-color: #fb923c; color: #fff; }
+        #bingoSection .center-circle-container {
+            background: #121a28; border-radius: 10px;
+            padding: 8px; display: flex; justify-content: center; align-items: center;
+        }
+        #bingoSection .circle-btn {
+            width: 62px; height: 62px; border-radius: 50%;
+            background: linear-gradient(135deg, #facc15, #d97706);
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 6px 20px rgba(250,204,21,0.35);
+        }
+        #bingoSection .circle-btn-inner {
+            width: 50px; height: 50px; border-radius: 50%;
+            background: #0b1220;
+            display: flex; justify-content: center; align-items: center;
+            font-weight: 900; font-size: 13px; color: #facc15;
+        }
+        #bingoSection .player-cards-mini {
+            display: flex; flex-direction: column; gap: 4px;
+            overflow-y: auto; max-height: 150px;
+        }
+        #bingoSection .mini-card-wrapper {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px; padding: 3px;
+        }
+        #bingoSection .mini-card-grid {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
+        }
+        #bingoSection .mini-card-header {
+            text-align: center; font-size: 7px; font-weight: 900;
+            padding: 1px; border-radius: 3px;
+        }
+        #bingoSection .mini-cell {
+            aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.06);
+            border-radius: 2px; font-size: 7px; font-weight: 900;
+            color: rgba(255,255,255,0.7);
+        }
+        #bingoSection .mini-cell.called { background: #10b981; color: #fff; }
+        #bingoSection .mini-cell.free { background: #facc15; color: #000; }
+        #bingoSection .mini-cell.corner { border: 2px solid #c547ff; }
+        #bingoSection .derash-display-box {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 8px;
+            background: rgba(250,204,21,0.12);
+            border: 1px solid rgba(250,204,21,0.35);
+            border-radius: 10px; text-align: center;
+        }
+        #bingoSection .derash-title {
+            font-size: 10px; font-weight: 900; color: #facc15; margin-bottom: 3px;
+        }
+        #bingoSection .derash-amount {
+            font-size: 16px; font-weight: 900; color: #facc15;
+        }
+        #bingoSection .bottom-buttons {
+            display: flex; gap: 6px; margin-top: 4px;
+        }
+        #bingoSection .btn-leave {
+            background: #ef4444; color: #fff;
+            border: none; border-radius: 14px;
+            padding: 10px 0; font-size: 12px; font-weight: 900;
+            letter-spacing: 0.05em; cursor: pointer; flex: 1;
+        }
+        #bingoSection .btn-refresh {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #fff; border-radius: 14px;
+            padding: 10px 0; font-size: 12px; font-weight: 900;
+            letter-spacing: 0.05em; cursor: pointer; flex: 1;
+        }
+
+        /* Arada Bingo bottom nav */
+        #bingoSection .bingo-bottom-nav {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(15,23,42,0.96);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex; justify-content: space-around; align-items: center;
+            padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+            z-index: 50;
+            backdrop-filter: blur(14px);
+        }
+        #bingoSection .bingo-nav-item {
+            flex: 1; display: flex; flex-direction: column; align-items: center;
+            gap: 2px; background: none; border: none; color: rgba(255,255,255,0.5);
+            font-size: 9px; font-weight: 900; letter-spacing: -0.02em;
+            text-transform: uppercase; padding: 4px 0; cursor: pointer; position: relative;
+        }
+        #bingoSection .bingo-nav-item .bingo-nav-ico { font-size: 18px; line-height: 1; }
+        #bingoSection .bingo-nav-item.active { color: #15AB52; }
+        #bingoSection .bingo-nav-item.active .bingo-nav-ico { transform: scale(1.15); }
+        #bingoSection .bingo-nav-item.active::before {
+            content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 20px; height: 2px; border-radius: 999px;
+            background: #15AB52; box-shadow: 0 0 8px #15AB52;
+        }
+
+        /* Bingo sub-pages (Scores, History, Wallet, Profile) */
+        #bingoSection .bingo-page {
+            padding: 16px;
+            min-height: calc(100vh - 140px);
+        }
+        #bingoSection .bingo-page-title {
+            font-size: 22px; font-weight: 900; letter-spacing: -0.03em;
+            text-transform: uppercase; margin-bottom: 4px; color: #fff;
+        }
+        #bingoSection .bingo-page-sub {
+            font-size: 10px; color: rgba(255,255,255,0.4);
+            text-transform: uppercase; letter-spacing: 0.15em;
+            font-weight: 800; margin-bottom: 14px;
+        }
+        #bingoSection .bingo-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px; padding: 14px; margin-bottom: 10px;
+        }
+        #bingoSection .bingo-card-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        #bingoSection .bingo-card-row:last-child { border-bottom: none; }
+        #bingoSection .bingo-card-row .lbl {
+            font-size: 10px; color: rgba(255,255,255,0.5);
+            font-weight: 800; letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+        #bingoSection .bingo-card-row .val {
+            font-size: 14px; font-weight: 900; color: #fff;
+        }
+        #bingoSection .bingo-card-row .val.gold { color: #facc15; }
+        #bingoSection .bingo-card-row .val.emerald { color: #34d399; }
+        #bingoSection .bingo-avatar {
+            width: 88px; height: 88px; border-radius: 30px;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 34px; font-weight: 900; color: #fff;
+            margin: 0 auto 12px;
+            box-shadow: 0 12px 30px rgba(99,102,241,0.4);
+        }
+        #bingoSection .bingo-avatar-name {
+            font-size: 20px; font-weight: 900; text-align: center;
+            letter-spacing: -0.02em; margin-bottom: 4px;
+        }
+        #bingoSection .bingo-avatar-sub {
+            font-size: 9px; font-weight: 900; color: #818cf8;
+            letter-spacing: 0.3em; text-transform: uppercase;
+            text-align: center; margin-bottom: 16px;
+        }
+        #bingoSection .bingo-big-number {
+            font-size: 34px; font-weight: 900; color: #facc15;
+            letter-spacing: -0.03em; line-height: 1;
+        }
+        #bingoSection .bingo-big-label {
+            font-size: 9px; color: rgba(255,255,255,0.4);
+            font-weight: 900; letter-spacing: 0.2em;
+            text-transform: uppercase;
+        }
+        #bingoSection .bingo-empty {
+            padding: 40px 16px; text-align: center;
+            opacity: 0.4;
+            font-size: 12px; font-weight: 800;
+            letter-spacing: 0.15em; text-transform: uppercase;
+        }
+
+        /* Winner modal */
+        .winner-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; color: #000; padding: 20px; border-radius: 16px; z-index: 3000; text-align: center; box-shadow: 0 0 30px rgba(255, 215, 0, 0.8); max-width: 90%; min-width: 280px; }
+        .winner-modal h2 { color: #ff4444; font-size: 24px; margin-bottom: 10px; }
+        .winner-modal p { font-size: 14px; margin-bottom: 8px; font-weight: bold; }
+        .winner-card-display { display: inline-block; background: #f5f5f5; border-radius: 8px; padding: 12px; margin: 10px auto; }
+        .winner-card-large-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+        .winner-card-large-header { text-align: center; font-size: 14px; font-weight: 900; padding: 2px; }
+        .winner-card-large-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.8); border-radius: 4px; font-size: 14px; font-weight: 900; color: #000; min-width: 30px; min-height: 30px; }
+        .winner-card-large-cell.free { background: #f39c12; color: white; }
+
+        /* ============ KENO (untouched) ============ */
+        #kenoSection { background: #0e1420; min-height: 100vh; padding: 8px; position: relative; }
+        .keno-wrap { max-width: 640px; margin: 0 auto; }
+        .keno-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #121a28; border-radius: 12px; border: 1px solid #23304a; margin-bottom: 8px; }
+        .keno-header h1 { font-size: 16px; font-weight: 900; letter-spacing: 1px; color: #4da6ff; }
+        .keno-header .keno-bal { font-size: 12px; color: #ffd700; font-weight: bold; }
+        .keno-timerbar { display: flex; justify-content: space-between; align-items: center; background: #121a28; border: 1px solid #23304a; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+        .keno-timerbar .lbl { font-size: 10px; color: #8b93a7; margin-right: 4px; }
+        .keno-timerbar .val { font-size: 18px; font-weight: 900; color: #2ecc71; }
+        .keno-timerbar .val.balls { color: #ffd700; }
+        .keno-drawn-strip { display: grid; grid-template-columns: auto repeat(8, 1fr); gap: 5px; align-items: center; background: #121a28; border: 1px solid #23304a; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; min-height: 44px; }
+        .keno-drawn-strip .keno-drawn-lbl { font-size: 9px; color: #8b93a7; font-weight: bold; letter-spacing: 1px; align-self: center; }
+        .keno-drawn-ball { width: 100%; aspect-ratio: 1; max-width: 34px; max-height: 34px; justify-self: center; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ffffff, #ffd54f 40%, #ffb300 100%); color: #000; font-weight: 900; font-size: 11px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 6px rgba(255, 213, 79, 0.7); animation: ballFloatIn 0.55s ease forwards; }
+        .keno-drawn-ball.win { background: radial-gradient(circle at 30% 30%, #ffffff, #00e676 40%, #00a854 100%); color: #003; box-shadow: 0 0 8px rgba(0, 230, 118, 0.9); }
+        .keno-drawn-empty { grid-column: 2 / span 8; font-size: 10px; color: #556074; font-style: italic; align-self: center; }
+        .keno-board-frame { background: #0b1220; border: 1px solid #23304a; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+        .keno-board { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; }
+        .keno-cell { aspect-ratio: 1; background: #16203a; border: 1px solid #23304a; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #8b93a7; cursor: pointer; transition: all 0.15s; user-select: none; position: relative; }
+        .keno-cell:active { transform: scale(0.9); }
+        .keno-cell.selected { background: #1a3a5c; border: 2px solid #4da6ff; color: #7fc4ff; box-shadow: 0 0 8px rgba(77,166,255,0.5); }
+        .keno-cell.drawn { background: #444f66; border: 2px solid #6b7899; color: #ffffff; animation: ballPop 0.6s ease; }
+        .keno-cell.win { background: #1a3a2a; border: 2px solid #00e676; color: #00e676; box-shadow: 0 0 14px rgba(0,230,118,0.9); }
+        @keyframes ballPop { 0% { transform: scale(0.2); opacity: 0; } 50% { transform: scale(1.4); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+        .keno-ball-float { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.2); width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #ffffff, #ffd54f 40%, #ffb300 100%); color: #000; font-weight: 900; font-size: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px rgba(255, 213, 79, 0.95), 0 0 40px rgba(255, 179, 0, 0.6); pointer-events: none; z-index: 10; opacity: 0; animation: ballFloatIn 0.6s ease forwards; }
+        .keno-ball-float.win { background: radial-gradient(circle at 30% 30%, #ffffff, #00e676 40%, #00a854 100%); color: #003; box-shadow: 0 0 22px rgba(0,230,118,0.95), 0 0 44px rgba(0,230,118,0.6); }
+        @keyframes ballFloatIn { 0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0; } 40% { transform: translate(-50%, -50%) scale(1.35); opacity: 1; } 70% { transform: translate(-50%, -50%) scale(0.95); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+        .keno-ball-float.fade-out { animation: ballFloatOut 0.4s ease forwards; }
+        @keyframes ballFloatOut { 0% { transform: translate(-50%, -50%) scale(1); opacity: 1; } 100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; } }
+        .keno-result-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0); background: linear-gradient(135deg, #1a3a2a, #0e2218); border: 3px solid #00e676; border-radius: 16px; padding: 24px 32px; z-index: 6000; text-align: center; opacity: 0; transition: all 0.35s ease; pointer-events: none; }
+        .keno-result-popup.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        .keno-result-popup.lost { background: linear-gradient(135deg, #3a1a1a, #221010); border-color: #ff4d4d; }
+        .keno-result-popup h2 { font-size: 24px; margin-bottom: 6px; color: #00e676; }
+        .keno-result-popup.lost h2 { color: #ff4d4d; }
+        .keno-result-popup .amt { font-size: 20px; font-weight: 900; color: #ffd700; }
+        .keno-controls { background: #121a28; border: 1px solid #23304a; border-radius: 12px; padding: 10px; }
+        .keno-ctrl-row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .keno-ctrl-row:last-child { margin-bottom: 0; }
+        .keno-ctrl-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; background: #1e2a44; color: #fff; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.15s; }
+        .keno-ctrl-btn:active { transform: scale(0.96); }
+        .keno-ctrl-btn.bet { background: #ffd700; color: #000; font-size: 15px; font-weight: 900; }
+        .keno-ctrl-btn.primary { background: linear-gradient(135deg, #2ecc71, #27ae60); color: #fff; font-size: 14px; }
+        .keno-ctrl-btn.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .keno-status { text-align: center; font-size: 12px; color: #8b93a7; margin-top: 8px; min-height: 16px; }
+        .keno-back { display: inline-block; margin-bottom: 8px; padding: 6px 14px; background: #1e2a44; border: 1px solid #4da6ff; color: #4da6ff; border-radius: 20px; font-size: 12px; font-weight: bold; cursor: pointer; }
+        .keno-back:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div id="loadingScreen" class="loading-screen">
+        <div class="spinner"></div>
+        <h2>Loading Game...</h2>
+    </div>
+
+    <div id="errorScreen" class="loading-screen hidden">
+        <h2>❌ Error</h2>
+        <p id="errorMessage" style="color:#ff6b6b; margin:20px 0; padding: 0 20px;"></p>
+        <button class="btn btn-secondary" style="max-width: 200px;" onclick="location.reload()">🔄 Retry</button>
+    </div>
+
+    <div id="gameContainer" class="container hidden">
+        <div class="header">
+            <div class="logo">🎯 ARADA BINGO</div>
+            <div><span class="game-id-badge" id="myGameIdBadge">🆔 —</span></div>
+        </div>
+        
+        <div class="stats-row">
+            <div class="stat-card"><div class="stat-label">💰 BALANCE</div><div class="stat-value" id="balance">0 ETB</div></div>
+            <div class="stat-card"><div class="stat-label">🎮 GAME</div><div class="stat-value" id="currentGameDisplay">—</div></div>
+            <button class="btn btn-secondary" style="max-width:80px;padding:4px;font-size:10px;" onclick="showGameSelection()">🔄 GAMES</button>
+        </div>
+        
+        <div id="gameSelectionScreen" class="game-selection hidden">
+            <div class="card-selection-title">🎮 SELECT GAME</div>
+            <div class="game-select-btn" onclick="startBingoGame()">
+                <div class="game-select-icon">🎯</div>
+                <div class="game-select-title">BINGO</div>
+                <div class="game-select-desc">10 ETB per card • Multiplayer</div>
+            </div>
+            <div class="game-select-btn" onclick="startKenoGame()">
+                <div class="game-select-icon">🎰</div>
+                <div class="game-select-title">FAST KENO 8</div>
+                <div class="game-select-desc">Pick 2-6 numbers • Fast draw</div>
+            </div>
+        </div>
+        
+        <div id="bingoSection" class="hidden">
+            <!-- Top bar -->
+            <div class="bingo-topbar">
+                <div class="bingo-brand" id="bingoBrand">Arada Bingo</div>
+                <button class="bingo-rules-btn" onclick="backToGameSelection()">⬅️ Back</button>
+            </div>
+
+            <!-- ===== PAGE: GAME ===== -->
+            <div id="bingoPageGame" class="bingo-page">
+                <div class="bingo-hero">
+                    <div class="bingo-hero-welcome">Welcome to</div>
+                    <div class="bingo-hero-title">Arada Bingo</div>
+                </div>
+
+                <div class="bingo-room-header" id="roomHeader">🌟 Bingo Room - 10 ETB/card</div>
+                
+                <div class="stats-row">
+                    <div class="stat-card prize-pool-card"><div class="stat-label">🏆 PRIZE POOL</div><div class="stat-value" id="prizePool">0 ETB</div></div>
+                    <div class="stat-card"><div class="stat-label">🎮 MY CARDS</div><div class="stat-value" id="cardCount">0</div></div>
+                    <div class="stat-card players-online-card"><div class="stat-label">👥 IN ROOM</div><div class="stat-value" id="onlinePlayersCount">0</div></div>
+                </div>
+                
+                <div id="playersInRoomSection" class="section hidden">
+                    <div class="section-title">👥 PLAYERS IN ROOM</div>
+                    <div class="players-list-section" id="playersListSection"></div>
+                </div>
+                
+                <div class="card-selection-highlight" id="cardSelectionArea">
+                    <div class="card-selection-title">
+                        🎴 SELECT YOUR CARDS 
+                        <span class="card-counter-badge" id="selectedCardCount">0/2</span>
+                    </div>
+                    <div style="font-size: 10px; text-align: center; margin-bottom: 6px; color: rgba(255,255,255,0.6);">
+                        Tap a number to buy that card • <span id="cardPriceDisplay">10</span> ETB each • Scroll to see all
+                    </div>
+                    <div class="cards-grid" id="cardsGrid"></div>
+                </div>
+                
+                <div id="myCardsSection" class="section hidden">
+                    <div class="section-title">🎮 MY CARDS (<span id="myCardsCount">0</span>/2)</div>
+                    <div id="myCardsList"></div>
+                    <div class="action-buttons">
+                        <button class="btn btn-secondary" id="resetBtn">🔄 RESET & REFUND</button>
+                    </div>
+                    <div id="countdownSection" class="countdown hidden">
+                        <div>⏳ GAME STARTS IN</div>
+                        <div class="countdown-number" id="countdownTimer">40</div>
+                        <div style="font-size:12px; margin-top:3px;">👥 <span id="countdownPlayers">0</span> players ready!</div>
+                    </div>
+                </div>
+                
+                <div id="bingoGameInterface" class="game-interface hidden">
+                    <div class="info-bar">
+                        <div class="info-item"><div class="info-label">Game ID</div><div class="info-value" id="infoGameId">—</div></div>
+                        <div class="info-item"><div class="info-label">Players</div><div class="info-value" id="infoPlayers">0</div></div>
+                        <div class="info-item"><div class="info-label">Bet</div><div class="info-value" id="infoBet">10</div></div>
+                        <div class="info-item"><div class="info-label">Derash</div><div class="info-value" id="infoDerash">0</div></div>
+                        <div class="info-item"><div class="info-label">Called</div><div class="info-value" id="infoCalled">0</div></div>
+                    </div>
+
+                    <div class="main-layout">
+                        <div class="grid-section">
+                            <div class="bingo-header">
+                                <div class="header-cell b-blue">B</div>
+                                <div class="header-cell i-purple">I</div>
+                                <div class="header-cell n-teal">N</div>
+                                <div class="header-cell g-orange">G</div>
+                                <div class="header-cell o-red">O</div>
+                            </div>
+                            <div class="bingo-grid" id="bingoGrid"></div>
+                        </div>
+
+                        <div class="side-panel">
+                            <div class="top-numbers">
+                                <div class="top-pill green" id="prevNumber1">—</div>
+                                <div class="top-pill pink" id="prevNumber2">—</div>
+                            </div>
+
+                            <div class="center-circle-container">
+                                <div class="circle-btn">
+                                    <div class="circle-btn-inner" id="currentNumberDisplay">—</div>
+                                </div>
+                            </div>
+
+                            <div class="player-cards-mini" id="playerCardsMini"></div>
+
+                            <div class="derash-display-box">
+                                <div class="derash-title">🏆 ደራሽ</div>
+                                <div class="derash-amount" id="derashAmount">0</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bottom-buttons">
+                        <button class="btn-leave" onclick="backToGameSelection()">⬅️ GAMES</button>
+                        <button class="btn-refresh" onclick="refreshBoard()">REFRESH</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== PAGE: SCORES / LEADERBOARD ===== -->
+            <div id="bingoPageScores" class="bingo-page hidden">
+                <div class="bingo-page-title">🏆 Scores</div>
+                <div class="bingo-page-sub">Top players this session</div>
+                <div class="bingo-card">
+                    <div class="bingo-card-row">
+                        <span class="lbl">🥇 Rank 1</span>
+                        <span class="val gold" id="scoreName1">—</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">🥈 Rank 2</span>
+                        <span class="val" id="scoreName2">—</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">🥉 Rank 3</span>
+                        <span class="val" id="scoreName3">—</span>
+                    </div>
+                </div>
+                <div class="bingo-card">
+                    <div class="bingo-card-row">
+                        <span class="lbl">Your Games Won</span>
+                        <span class="val emerald" id="myGamesWon">0</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Your Rank</span>
+                        <span class="val gold">Unranked</span>
+                    </div>
+                </div>
+                <div class="bingo-empty">Play more rounds to climb the ranks</div>
+            </div>
+
+            <!-- ===== PAGE: HISTORY ===== -->
+            <div id="bingoPageHistory" class="bingo-page hidden">
+                <div class="bingo-page-title">🕒 History</div>
+                <div class="bingo-page-sub">Your recent games</div>
+                <div class="bingo-card">
+                    <div class="bingo-card-row">
+                        <span class="lbl">Games Played</span>
+                        <span class="val" id="histGamesPlayed">0</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Games Won</span>
+                        <span class="val emerald" id="histGamesWon">0</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Total Winnings</span>
+                        <span class="val gold" id="histTotalWon">0 ETB</span>
+                    </div>
+                </div>
+                <div class="bingo-card" id="histRecentList">
+                    <div class="bingo-empty">No games yet</div>
+                </div>
+            </div>
+
+            <!-- ===== PAGE: WALLET ===== -->
+            <div id="bingoPageWallet" class="bingo-page hidden">
+                <div class="bingo-page-title">💼 Wallet</div>
+                <div class="bingo-page-sub">Your balance</div>
+                <div class="bingo-card">
+                    <div style="text-align:center;padding:12px 0 6px;">
+                        <div class="bingo-big-label">Balance</div>
+                        <div class="bingo-big-number" id="walletBalance">0 ETB</div>
+                    </div>
+                </div>
+                <div class="bingo-card">
+                    <div class="bingo-card-row">
+                        <span class="lbl">Bet per Card</span>
+                        <span class="val">10 ETB</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Max Cards</span>
+                        <span class="val">2</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Prize Pool</span>
+                        <span class="val gold" id="walletPrizePool">0 ETB</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Current Room</span>
+                        <span class="val" id="walletRoom">room_10</span>
+                    </div>
+                </div>
+                <div class="bingo-empty">Manage your funds in the Telegram bot chat</div>
+            </div>
+
+            <!-- ===== PAGE: PROFILE ===== -->
+            <div id="bingoPageProfile" class="bingo-page hidden">
+                <div class="bingo-page-title">👤 Profile</div>
+                <div class="bingo-page-sub">Your account</div>
+                <div class="bingo-card">
+                    <div class="bingo-avatar" id="profileAvatar">P</div>
+                    <div class="bingo-avatar-name" id="profileName">Player</div>
+                    <div class="bingo-avatar-sub">Verified Player</div>
+                </div>
+                <div class="bingo-card">
+                    <div class="bingo-card-row">
+                        <span class="lbl">Telegram ID</span>
+                        <span class="val" id="profileTgId">—</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Game ID</span>
+                        <span class="val gold" id="profileGameId">—</span>
+                    </div>
+                    <div class="bingo-card-row">
+                        <span class="lbl">Games Won</span>
+                        <span class="val emerald" id="profileWins">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== BOTTOM NAV ===== -->
+            <nav class="bingo-bottom-nav">
+                <button class="bingo-nav-item active" data-tab="game" onclick="bingoSwitchTab('game')">
+                    <span class="bingo-nav-ico">🎮</span><span>Game</span>
+                </button>
+                <button class="bingo-nav-item" data-tab="scores" onclick="bingoSwitchTab('scores')">
+                    <span class="bingo-nav-ico">🏆</span><span>Scores</span>
+                </button>
+                <button class="bingo-nav-item" data-tab="history" onclick="bingoSwitchTab('history')">
+                    <span class="bingo-nav-ico">🕒</span><span>History</span>
+                </button>
+                <button class="bingo-nav-item" data-tab="wallet" onclick="bingoSwitchTab('wallet')">
+                    <span class="bingo-nav-ico">💼</span><span>Wallet</span>
+                </button>
+                <button class="bingo-nav-item" data-tab="profile" onclick="bingoSwitchTab('profile')">
+                    <span class="bingo-nav-ico">👤</span><span>Profile</span>
+                </button>
+            </nav>
+        </div>
+        
+        <!-- ============ FAST KENO (untouched) ============ -->
+        <div id="kenoSection" class="hidden">
+            <div class="keno-wrap">
+                <button class="keno-back" onclick="backToGameSelection()">⬅️ GAMES</button>
+                <div class="keno-header">
+                    <h1>🎰 FAST KENO 8</h1>
+                    <div class="keno-bal" id="kenoBalance">0 ETB</div>
+                </div>
+                <div class="keno-timerbar">
+                    <div><span class="lbl">TIME</span><span class="val" id="kenoTimer">--</span></div>
+                    <div><span class="lbl">BALLS</span><span class="val balls"><span id="kenoBalls">00</span>/20</span></div>
+                </div>
+
+                <div class="keno-drawn-strip" id="kenoDrawnStrip">
+                    <span class="keno-drawn-lbl">DRAWN</span>
+                    <span class="keno-drawn-empty" id="kenoDrawnEmpty">No numbers yet...</span>
+                </div>
+
+                <div class="keno-board-frame">
+                    <div class="keno-board" id="kenoBoard"></div>
+                </div>
+                <div class="keno-controls">
+                    <div class="keno-ctrl-row">
+                        <button class="keno-ctrl-btn" onclick="kenoChangeBet(-1)">−</button>
+                        <button class="keno-ctrl-btn bet" id="kenoBetAmount">1</button>
+                        <button class="keno-ctrl-btn" onclick="kenoChangeBet(1)">+</button>
+                    </div>
+                    <div class="keno-ctrl-row">
+                        <button class="keno-ctrl-btn" onclick="kenoQuickPick()">🎲 Quick Pick</button>
+                        <button class="keno-ctrl-btn" onclick="kenoClearSelection()">🗑️ Clear</button>
+                    </div>
+                    <div class="keno-ctrl-row">
+                        <button class="keno-ctrl-btn primary" id="kenoBetBtn" onclick="kenoPlaceBet()" disabled>SELECT 2+ NUMBERS</button>
+                    </div>
+                    <div class="keno-status" id="kenoStatus"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="winnerModal" class="winner-modal hidden">
+        <h2>🎉 BINGO WINNER! 🎉</h2>
+        <p id="winnerName">Player</p>
+        <p id="winnerCard">Card #1</p>
+        <p id="winnerPrizeText">Prize: 0 ETB</p>
+        <div class="winner-card-display" id="winnerCardDisplay"></div>
+    </div>
+
+    <div id="kenoResultPopup" class="keno-result-popup">
+        <h2 id="kenoResultTitle">WIN</h2>
+        <div class="amt" id="kenoResultAmount">0 ETB</div>
+    </div>
+
+    <div id="reloadOverlay" class="reload-overlay hidden">
+        <div class="reload-spinner"></div>
+        <div class="reload-text">🔄 Reloading Game...</div>
+    </div>
+
+    <div class="popup" id="popup"></div>
+
+    <script>
+        const BACKEND_URL = 'https://logo-bingo-backend.onrender.com';
+        const WINNER_PERCENTAGE = 0.80;
+        const SOUNDS_PATH = 'sounds/';
+        const TOTAL_CARDS = 400;
+        const ROOM_ID = 'room_10';
+        const BET_AMOUNT = 10;
+        const COUNTDOWN_START = 40;
+        const KENO_DRAW_GAP = 2000;
+        const KENO_MAX_PICKS = 6;
+        const KENO_SOUND_ENABLED = false;
+        
+        const BINGO_LETTERS = ['B', 'I', 'N', 'G', 'O'];
+        const BINGO_RANGES = {
+            'B': { min: 1, max: 15 },
+            'I': { min: 16, max: 30 },
+            'N': { min: 31, max: 45 },
+            'G': { min: 46, max: 60 },
+            'O': { min: 61, max: 75 }
+        };
+
+        let telegramId = null;
+        let gameId = null;
+        let balance = 0;
+        let firstName = 'Player';
+        let currentGame = null;
+        let currentRoomId = ROOM_ID;
+        let myCards = [];
+        let allCards = [];
+        let totalPrizePool = 0;
+        let socket = null;
+        let countdownInterval = null;
+        let localCountdown = COUNTDOWN_START;
+        let gameActive = false;
+        let gameStarted = false;
+        let playersInRoom = 0;
+        let playersWithCards = 0;
+        let takenCards = new Set();
+        let countdownAlreadyStarted = false;
+        let calledNumbers = [];
+        let markedCells = new Set();
+        let numberCallInterval = null;
+        let currentBall = null;
+        let previousBall = null;
+        let previousBall2 = null;
+        let winnerDeclared = false;
+        let hasJoinedRoom = false;
+        let roomSeed = null;
+        let totalCardsPurchased = 0;
+        let gameSessionId = 0;
+        let reloadTimeout = null;
+        let autoStartBingo = false;
+
+        let kenoNumbers = [];
+        let kenoBetAmount = 1;
+        let kenoIsActive = false;
+        let kenoTimerInterval = null;
+        let kenoRoundTime = 30;
+
+        // User stats for Score / History / Profile pages
+        let userGamesPlayed = 0;
+        let userGamesWon = 0;
+        let userTotalWon = 0;
+        let recentHistory = [];
+
+        // ============ SOUND MANAGER (UPDATED for MP3 files) ============
+        const AudioManager = {
+            players: [], currentIndex: 0, soundCache: new Map(), maxPlayers: 6,
+            init() {
+                for (let i = 0; i < this.maxPlayers; i++) {
+                    const a = new Audio(); a.preload = 'auto'; a.volume = 0.8; this.players.push(a);
+                }
+                // Preload key sounds
+                for (const s of ['notify.mp3','bingo.mp3']) this.preload(s);
+            },
+            getNextPlayer() { const p = this.players[this.currentIndex]; this.currentIndex = (this.currentIndex + 1) % this.maxPlayers; return p; },
+            async preload(f) {
+                if (this.soundCache.has(f)) return;
+                try { const r = await fetch(`${SOUNDS_PATH}${f}`); if (r.ok) this.soundCache.set(f, URL.createObjectURL(await r.blob())); } catch(e){}
+            },
+            async play(f, o={}) {
+                const {volume=0.8,loop=false} = o;
+                const url = this.soundCache.get(f) || `${SOUNDS_PATH}${f}`;
+                const p = this.getNextPlayer();
+                p.src = url; p.volume = volume; p.loop = loop; p.currentTime = 0;
+                try { await p.play(); return p; } catch(e) { return null; }
+            },
+            stopAll() { this.players.forEach(p => { p.pause(); p.currentTime = 0; }); }
+        };
+        AudioManager.init();
+
+        // Plays the correct MP3 for a called number using "letter-number.mp3" format
+        // Example: B-1.mp3, I-16.mp3, N-40.mp3, G-52.mp3, O-75.mp3
+        async function playNumberSound(letter, number) {
+            const upperLetter = (letter || '').toUpperCase();
+            const filename = `${upperLetter}-${number}.mp3`;
+            await AudioManager.play(filename, { volume: 0.75 });
+        }
+
+        // Plays the winner sound (bingo.mp3)
+        async function playWinnerSound() {
+            AudioManager.stopAll();
+            await AudioManager.play('bingo.mp3', { volume: 1.0 });
+        }
+
+        // Plays the start/notification sound (notify.mp3)
+        async function playStartSound() {
+            await AudioManager.play('notify.mp3', { volume: 0.9 });
+        }
+
+        function showReloadOverlay() { document.getElementById('reloadOverlay').classList.remove('hidden'); }
+        function autoReloadGame() {
+            if (reloadTimeout) clearTimeout(reloadTimeout);
+            showReloadOverlay();
+            try { localStorage.setItem('bingo_auto_start', 'true'); } catch(e) {}
+            reloadTimeout = setTimeout(() => window.location.reload(), 2000);
+        }
+        function seededRandom(seed) {
+            let s = seed;
+            return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+        }
+        function generateSynchronizedNumbers(seed) {
+            const n = []; for (let i = 1; i <= 75; i++) n.push(i);
+            const rng = seededRandom(seed);
+            for (let i = n.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [n[i], n[j]] = [n[j], n[i]]; }
+            return n;
+        }
+        function getUserIdFromSources() {
+            if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) return String(window.Telegram.WebApp.initDataUnsafe.user.id);
+            const p = new URLSearchParams(window.location.search);
+            const u = p.get('user_id') || p.get('userId') || p.get('id') || p.get('game_id');
+            if (u) return u.trim();
+            const s = localStorage.getItem('bingo_user_id');
+            return s || null;
+        }
+        function showPopup(msg) {
+            const p = document.getElementById('popup');
+            p.innerHTML = msg; p.style.display = 'block';
+            setTimeout(() => p.style.display = 'none', 3000);
+        }
+        function showLoading() {
+            document.getElementById('loadingScreen').classList.remove('hidden');
+            document.getElementById('gameContainer').classList.add('hidden');
+            document.getElementById('errorScreen').classList.add('hidden');
+        }
+        function showGame() {
+            document.getElementById('loadingScreen').classList.add('hidden');
+            document.getElementById('gameContainer').classList.remove('hidden');
+            document.getElementById('errorScreen').classList.add('hidden');
+        }
+        function showError(m) {
+            document.getElementById('loadingScreen').classList.add('hidden');
+            document.getElementById('gameContainer').classList.add('hidden');
+            document.getElementById('errorScreen').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = m;
+        }
+        async function fetchUser(userId) {
+            try {
+                const r = await fetch(`${BACKEND_URL}/api/user/${encodeURIComponent(userId)}`);
+                const d = await r.json();
+                if (d.success && d.user) return d.user;
+                return null;
+            } catch(e) { return null; }
+        }
+
+        async function initialize() {
+            showLoading();
+            const userId = getUserIdFromSources();
+            if (!userId) { showError('No user ID found.'); return; }
+            const user = await fetchUser(userId);
+            if (!user) { showError('User not found. Send /start to @logobingo_bot first.'); return; }
+
+            telegramId = user.userId;
+            gameId = user.gameId || '';
+            firstName = user.firstName || 'Player';
+            balance = user.balance || 0;
+
+            try { localStorage.setItem('bingo_user_id', telegramId); } catch(_) {}
+
+            document.getElementById('myGameIdBadge').textContent = `🆔 ${gameId || telegramId}`;
+            document.getElementById('balance').textContent = `${balance.toFixed(2)} ETB`;
+
+            generateAllCards();
+            buildCardsGrid();
+            buildKenoBoard();
+            updateProfilePage();
+
+            try {
+                autoStartBingo = localStorage.getItem('bingo_auto_start') === 'true';
+                if (autoStartBingo) localStorage.removeItem('bingo_auto_start');
+            } catch(e) {}
+
+            showGame();
+            if (autoStartBingo) startBingoGame(); else showGameSelection();
+            setTimeout(() => showPopup(`✅ Welcome ${firstName}!`), 500);
+            initSocket();
+        }
+
+        function showGameSelection() {
+            currentGame = null;
+            resetBingoGameState();
+            stopKenoTimer();
+            document.getElementById('gameSelectionScreen').classList.remove('hidden');
+            document.getElementById('bingoSection').classList.add('hidden');
+            document.getElementById('kenoSection').classList.add('hidden');
+            document.getElementById('currentGameDisplay').textContent = '—';
+        }
+
+        function resetBingoGameState() {
+            stopCountdown();
+            if (numberCallInterval) { clearInterval(numberCallInterval); numberCallInterval = null; }
+            countdownAlreadyStarted = false;
+            gameStarted = false; gameActive = false; winnerDeclared = false;
+            roomSeed = null; myCards = []; takenCards.clear();
+            calledNumbers = []; markedCells = new Set();
+            currentBall = null; previousBall = null; previousBall2 = null;
+            totalPrizePool = 0; totalCardsPurchased = 0;
+            playersInRoom = 0; playersWithCards = 0;
+            gameSessionId++;
+
+            document.getElementById('prizePool').textContent = '0 ETB';
+            document.getElementById('derashAmount').textContent = '0';
+            document.getElementById('cardCount').textContent = '0';
+            document.getElementById('onlinePlayersCount').textContent = '0';
+            document.getElementById('countdownTimer').textContent = COUNTDOWN_START;
+            document.getElementById('countdownPlayers').textContent = '0';
+            document.getElementById('countdownSection').classList.add('hidden');
+            document.getElementById('bingoGameInterface').classList.add('hidden');
+            document.getElementById('myCardsSection').classList.add('hidden');
+            document.getElementById('playersInRoomSection').classList.add('hidden');
+            document.getElementById('winnerModal').classList.add('hidden');
+            document.getElementById('myCardsList').innerHTML = '';
+            document.getElementById('playerCardsMini').innerHTML = '';
+            document.getElementById('currentNumberDisplay').textContent = '—';
+            document.getElementById('prevNumber1').textContent = '—';
+            document.getElementById('prevNumber2').textContent = '—';
+            document.getElementById('infoCalled').textContent = '0';
+            document.getElementById('infoDerash').textContent = '0';
+            document.getElementById('selectedCardCount').textContent = '0/2';
+            document.getElementById('myCardsCount').textContent = '0';
+            document.getElementById('cardSelectionArea').classList.remove('hidden');
+        }
+
+        function startBingoGame() {
+            currentGame = 'bingo';
+            document.getElementById('gameSelectionScreen').classList.add('hidden');
+            document.getElementById('bingoSection').classList.remove('hidden');
+            document.getElementById('kenoSection').classList.add('hidden');
+            document.getElementById('currentGameDisplay').textContent = '🎯 BINGO';
+            // Reset to Game tab
+            bingoSwitchTab('game');
+            resetBingoGameState();
+            buildCardsGrid();
+            updateStatsPages();
+            if (socket?.connected && hasJoinedRoom) {
+                socket.emit('leave_game', { userId: telegramId, roomId: currentRoomId });
+                hasJoinedRoom = false;
+            }
+            setTimeout(() => joinBingoRoom(), 300);
+        }
+
+        function startKenoGame() {
+            currentGame = 'keno';
+            document.getElementById('gameSelectionScreen').classList.add('hidden');
+            document.getElementById('bingoSection').classList.add('hidden');
+            document.getElementById('kenoSection').classList.remove('hidden');
+            document.getElementById('currentGameDisplay').textContent = '🎰 KENO';
+            document.getElementById('kenoBalance').textContent = balance.toFixed(2) + ' ETB';
+            buildKenoBoard();
+            kenoClearSelection();
+            resetKenoDrawnStrip();
+            startKenoTimer();
+        }
+
+        function backToGameSelection() {
+            if (currentGame === 'bingo' && socket?.connected && hasJoinedRoom) {
+                socket.emit('leave_game', { userId: telegramId, roomId: currentRoomId });
+                hasJoinedRoom = false;
+            }
+            stopKenoTimer();
+            stopCountdown();
+            countdownAlreadyStarted = false;
+            showGameSelection();
+        }
+
+        // ================= ARADA BINGO TAB SWITCHER =================
+        function bingoSwitchTab(tab) {
+            // Hide all sub-pages
+            ['game','scores','history','wallet','profile'].forEach(t => {
+                const el = document.getElementById('bingoPage' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (el) el.classList.add('hidden');
+            });
+            // Show requested page
+            const target = document.getElementById('bingoPage' + tab.charAt(0).toUpperCase() + tab.slice(1));
+            if (target) target.classList.remove('hidden');
+
+            // Update nav active states
+            document.querySelectorAll('#bingoSection .bingo-nav-item').forEach(b => {
+                b.classList.toggle('active', b.dataset.tab === tab);
+            });
+
+            // Update brand text per tab
+            const brand = document.getElementById('bingoBrand');
+            if (brand) {
+                const names = {
+                    game: 'Arada Bingo',
+                    scores: 'Scores',
+                    history: 'History',
+                    wallet: 'Wallet',
+                    profile: 'Profile'
+                };
+                brand.textContent = names[tab] || 'Arada Bingo';
+            }
+
+            // Refresh page data
+            if (tab === 'scores') updateScoresPage();
+            if (tab === 'history') updateHistoryPage();
+            if (tab === 'wallet') updateWalletPage();
+            if (tab === 'profile') updateProfilePage();
+        }
+        window.bingoSwitchTab = bingoSwitchTab;
+
+        function updateStatsPages() {
+            updateScoresPage();
+            updateHistoryPage();
+            updateWalletPage();
+            updateProfilePage();
+        }
+
+        function updateScoresPage() {
+            const s1 = document.getElementById('scoreName1');
+            const s2 = document.getElementById('scoreName2');
+            const s3 = document.getElementById('scoreName3');
+            const won = document.getElementById('myGamesWon');
+            // Show the current player as rank 1 if they have wins, otherwise placeholders
+            if (userGamesWon > 0) {
+                s1.textContent = firstName + ' (' + userGamesWon + ' wins)';
+                s2.textContent = '—';
+                s3.textContent = '—';
+            } else {
+                s1.textContent = '—';
+                s2.textContent = '—';
+                s3.textContent = '—';
+            }
+            if (won) won.textContent = userGamesWon;
+        }
+
+        function updateHistoryPage() {
+            const gp = document.getElementById('histGamesPlayed');
+            const gw = document.getElementById('histGamesWon');
+            const tw = document.getElementById('histTotalWon');
+            const list = document.getElementById('histRecentList');
+            if (gp) gp.textContent = userGamesPlayed;
+            if (gw) gw.textContent = userGamesWon;
+            if (tw) tw.textContent = userTotalWon.toFixed(2) + ' ETB';
+            if (list) {
+                if (recentHistory.length === 0) {
+                    list.innerHTML = '<div class="bingo-empty">No games yet</div>';
+                } else {
+                    list.innerHTML = recentHistory.slice(0, 8).map(h =>
+                        `<div class="bingo-card-row">
+                            <span class="lbl">${h.date}</span>
+                            <span class="val ${h.won ? 'emerald' : ''}">${h.won ? '+'+h.prize.toFixed(2)+' ETB' : 'Lost'}</span>
+                        </div>`
+                    ).join('');
+                }
+            }
+        }
+
+        function updateWalletPage() {
+            const wb = document.getElementById('walletBalance');
+            const wp = document.getElementById('walletPrizePool');
+            const wr = document.getElementById('walletRoom');
+            if (wb) wb.textContent = balance.toFixed(2) + ' ETB';
+            if (wp) wp.textContent = totalPrizePool.toFixed(2) + ' ETB';
+            if (wr) wr.textContent = currentRoomId;
+        }
+
+        function updateProfilePage() {
+            const av = document.getElementById('profileAvatar');
+            const nm = document.getElementById('profileName');
+            const tg = document.getElementById('profileTgId');
+            const gi = document.getElementById('profileGameId');
+            const w = document.getElementById('profileWins');
+            if (av) av.textContent = (firstName || 'P').charAt(0).toUpperCase();
+            if (nm) nm.textContent = firstName;
+            if (tg) tg.textContent = telegramId || '—';
+            if (gi) gi.textContent = gameId || '—';
+            if (w) w.textContent = userGamesWon;
+        }
+
+        // ================= KENO =================
+        function buildKenoBoard() {
+            const board = document.getElementById('kenoBoard');
+            board.innerHTML = '';
+            for (let i = 1; i <= 80; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'keno-cell';
+                cell.textContent = i;
+                cell.dataset.num = i;
+                cell.addEventListener('click', () => kenoToggle(i, cell));
+                board.appendChild(cell);
+            }
+        }
+        function resetKenoDrawnStrip() {
+            const strip = document.getElementById('kenoDrawnStrip');
+            strip.innerHTML = '<span class="keno-drawn-lbl">DRAWN</span><span class="keno-drawn-empty" id="kenoDrawnEmpty">No numbers yet...</span>';
+        }
+        function appendKenoDrawnBall(num, isWin) {
+            const strip = document.getElementById('kenoDrawnStrip');
+            const empty = document.getElementById('kenoDrawnEmpty');
+            if (empty) empty.remove();
+            const ball = document.createElement('div');
+            ball.className = 'keno-drawn-ball' + (isWin ? ' win' : '');
+            ball.textContent = num;
+            ball.dataset.num = num;
+            strip.appendChild(ball);
+        }
+        function kenoToggle(num, cell) {
+            if (kenoIsActive) return;
+            const idx = kenoNumbers.indexOf(num);
+            if (idx >= 0) {
+                kenoNumbers.splice(idx, 1);
+                cell.classList.remove('selected');
+            } else {
+                if (kenoNumbers.length >= KENO_MAX_PICKS) { alert(`Max ${KENO_MAX_PICKS} numbers!`); return; }
+                kenoNumbers.push(num);
+                cell.classList.add('selected');
+            }
+            kenoUpdateBetDisplay();
+        }
+        function kenoQuickPick() {
+            if (kenoIsActive) return;
+            kenoClearSelection();
+            kenoNumbers = [];
+            while (kenoNumbers.length < KENO_MAX_PICKS) {
+                const n = Math.floor(Math.random() * 80) + 1;
+                if (!kenoNumbers.includes(n)) kenoNumbers.push(n);
+            }
+            document.querySelectorAll('.keno-cell').forEach(c => {
+                if (kenoNumbers.includes(parseInt(c.dataset.num))) c.classList.add('selected');
+            });
+            kenoUpdateBetDisplay();
+        }
+        function kenoClearSelection() {
+            if (kenoIsActive) return;
+            kenoNumbers = [];
+            document.querySelectorAll('.keno-cell.selected').forEach(c => c.classList.remove('selected'));
+            kenoUpdateBetDisplay();
+        }
+        function kenoChangeBet(delta) {
+            if (kenoIsActive) return;
+            kenoBetAmount += delta;
+            if (kenoBetAmount < 1) kenoBetAmount = 1;
+            if (kenoBetAmount > balance) kenoBetAmount = Math.floor(balance) || 1;
+            kenoUpdateBetDisplay();
+        }
+        function kenoUpdateBetDisplay() {
+            const btn = document.getElementById('kenoBetBtn');
+            document.getElementById('kenoBetAmount').textContent = kenoBetAmount;
+            if (kenoNumbers.length >= 2) {
+                btn.disabled = false;
+                btn.textContent = `BET ${kenoBetAmount} ETB`;
+            } else {
+                btn.disabled = true;
+                btn.textContent = 'SELECT 2+ NUMBERS';
+            }
+        }
+        function startKenoTimer() {
+            stopKenoTimer();
+            kenoRoundTime = 30;
+            document.getElementById('kenoTimer').textContent = kenoRoundTime;
+            kenoTimerInterval = setInterval(() => {
+                kenoRoundTime--;
+                if (kenoRoundTime < 0) kenoRoundTime = 30;
+                document.getElementById('kenoTimer').textContent = kenoRoundTime;
+            }, 1000);
+        }
+        function stopKenoTimer() {
+            if (kenoTimerInterval) { clearInterval(kenoTimerInterval); kenoTimerInterval = null; }
+        }
+        function showKenoResult(win, amount) {
+            const popup = document.getElementById('kenoResultPopup');
+            const title = document.getElementById('kenoResultTitle');
+            const amt = document.getElementById('kenoResultAmount');
+            if (win) {
+                popup.classList.remove('lost');
+                title.textContent = '🎉 WIN';
+                amt.textContent = '+' + amount.toFixed(2) + ' ETB';
+            } else {
+                popup.classList.add('lost');
+                title.textContent = 'TRY AGAIN';
+                amt.textContent = '0 ETB';
+            }
+            popup.classList.add('show');
+            setTimeout(() => popup.classList.remove('show'), 2500);
+        }
+        function popBallOnCell(cell, num, isWin) {
+            if (!cell) return;
+            const existing = cell.querySelector('.keno-ball-float');
+            if (existing) existing.remove();
+            const ball = document.createElement('div');
+            ball.className = 'keno-ball-float' + (isWin ? ' win' : '');
+            ball.textContent = num;
+            cell.appendChild(ball);
+            setTimeout(() => {
+                ball.classList.add('fade-out');
+                setTimeout(() => { if (ball.parentNode) ball.parentNode.removeChild(ball); }, 400);
+            }, 1700);
+        }
+        async function kenoPlaceBet() {
+            if (kenoIsActive) return;
+            if (kenoNumbers.length < 2) { alert('Select at least 2 numbers!'); return; }
+            if (balance < kenoBetAmount) { alert('Insufficient funds!'); return; }
+            kenoIsActive = true;
+            const btn = document.getElementById('kenoBetBtn');
+            const status = document.getElementById('kenoStatus');
+            btn.disabled = true;
+            btn.textContent = 'DRAWING...';
+            status.textContent = '⏳ Placing bet...';
+            document.querySelectorAll('.keno-cell').forEach(c => {
+                c.classList.remove('drawn', 'win');
+                const f = c.querySelector('.keno-ball-float');
+                if (f) f.remove();
+            });
+            document.getElementById('kenoBalls').textContent = '00';
+            resetKenoDrawnStrip();
+            try {
+                const authRes = await fetch(`${BACKEND_URL}/api/keno/auth`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: telegramId })
+                });
+                const authData = await authRes.json();
+                if (!authData.success) {
+                    alert('Authentication failed');
+                    kenoIsActive = false; kenoUpdateBetDisplay();
+                    return;
+                }
+                const res = await fetch(`${BACKEND_URL}/api/keno/place_bet`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authData.token
+                    },
+                    body: JSON.stringify({ numbers: kenoNumbers, bet_amount: kenoBetAmount })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    alert(data.error);
+                    kenoIsActive = false; kenoUpdateBetDisplay();
+                    return;
+                }
+                balance = data.new_balance;
+                document.getElementById('balance').textContent = balance.toFixed(2) + ' ETB';
+                document.getElementById('kenoBalance').textContent = balance.toFixed(2) + ' ETB';
+                status.textContent = '🎲 Drawing numbers...';
+                const drawn = data.winning_numbers || [];
+                for (let i = 0; i < drawn.length; i++) {
+                    const num = drawn[i];
+                    const isWin = kenoNumbers.includes(num);
+                    const cell = document.querySelector(`.keno-cell[data-num="${num}"]`);
+                    if (cell) {
+                        cell.classList.add('drawn');
+                        if (isWin) cell.classList.add('win');
+                        popBallOnCell(cell, num, isWin);
+                    }
+                    appendKenoDrawnBall(num, isWin);
+                    document.getElementById('kenoBalls').textContent = String(i + 1).padStart(2, '0');
+                    if (i < drawn.length - 1) {
+                        await new Promise(r => setTimeout(r, KENO_DRAW_GAP));
+                    }
+                }
+                await new Promise(r => setTimeout(r, 700));
+                if (data.payout > 0) {
+                    status.textContent = `🎉 WIN! +${data.payout.toFixed(2)} ETB (${data.hits} hits)`;
+                    showKenoResult(true, data.payout);
+                    showPopup(`🎉 WIN! +${data.payout.toFixed(2)} ETB (${data.hits} hits)`);
+                } else {
+                    status.textContent = `❌ Lost (${data.hits} hits)`;
+                    showKenoResult(false, 0);
+                    showPopup(`❌ Lost (${data.hits} hits)`);
+                }
+                setTimeout(() => {
+                    kenoIsActive = false;
+                    kenoNumbers = [];
+                    document.querySelectorAll('.keno-cell').forEach(c => {
+                        c.classList.remove('selected', 'drawn', 'win');
+                        const f = c.querySelector('.keno-ball-float');
+                        if (f) f.remove();
+                    });
+                    document.getElementById('kenoBalls').textContent = '00';
+                    kenoUpdateBetDisplay();
+                }, 2800);
+            } catch (e) {
+                console.error('Keno error:', e);
+                alert('Connection error');
+                kenoIsActive = false;
+                kenoUpdateBetDisplay();
+            }
+        }
+
+        // ================= BINGO =================
+        function generateGrid() {
+            const g = [[],[],[],[],[]];
+            for (let col = 0; col < 5; col++) {
+                const start = col * 15 + 1;
+                let nums = [];
+                for (let n = start; n <= start + 14; n++) nums.push(n);
+                for (let i = nums.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [nums[i], nums[j]] = [nums[j], nums[i]]; }
+                for (let r = 0; r < 5; r++) { if (r === 2 && col === 2) g[r][col] = 0; else g[r][col] = nums[r]; }
+            }
+            return g;
+        }
+        function generateAllCards() {
+            allCards = [];
+            for (let i = 1; i <= TOTAL_CARDS; i++) allCards.push({ id: i, grid: generateGrid() });
+        }
+        function joinBingoRoom() {
+            if (hasJoinedRoom || currentGame !== 'bingo') return;
+            hasJoinedRoom = true;
+            if (socket?.connected) {
+                socket.emit('join_game', { userId: telegramId, roomId: currentRoomId, userData: { firstName, balance } });
+            } else {
+                hasJoinedRoom = false;
+                setTimeout(joinBingoRoom, 500);
+            }
+        }
+        function buildCardsGrid() {
+            const c = document.getElementById('cardsGrid');
+            if (!c) return;
+            c.innerHTML = '';
+            for (let i = 1; i <= TOTAL_CARDS; i++) {
+                const b = document.createElement('button');
+                b.className = 'card-btn'; b.textContent = i;
+                if (myCards.some(x => x.id === i)) b.classList.add('owned');
+                else if (takenCards.has(i)) { b.classList.add('taken'); b.textContent = i + ' ✗'; }
+                b.onclick = () => purchaseCard(i);
+                c.appendChild(b);
+            }
+            updateCardCounter();
+        }
+        function updateCardCounter() {
+            document.getElementById('selectedCardCount').textContent = `${myCards.length}/2`;
+            document.getElementById('cardCount').textContent = myCards.length;
+            document.getElementById('myCardsCount').textContent = myCards.length;
+        }
+        function updatePrizePoolDisplay() {
+            totalPrizePool = totalCardsPurchased * BET_AMOUNT;
+            document.getElementById('prizePool').textContent = `${totalPrizePool.toFixed(2)} ETB`;
+            updateDerashDisplay();
+            updateWalletPage();
+        }
+        function checkAndStartCountdown() {
+            if (playersWithCards >= 2 && !gameStarted && !countdownAlreadyStarted) startLocalCountdown(COUNTDOWN_START);
+        }
+        async function purchaseCard(cardId) {
+            if (gameStarted) { showPopup('🎮 Game already started!'); return; }
+            if (takenCards.has(cardId)) { showPopup('❌ Card taken!'); return; }
+            if (myCards.some(c => c.id === cardId)) { showPopup('❌ Already purchased!'); return; }
+            if (myCards.length >= 2) { showPopup('⚠️ Max 2 cards!'); return; }
+            if (balance < BET_AMOUNT) { showPopup('❌ Insufficient balance!'); return; }
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/game`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegramId, action: 'purchaseCard', data: { roomId: currentRoomId, count: 1, cardId } })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    balance = result.balance;
+                    const card = allCards.find(c => c.id === cardId);
+                    myCards.push(card); takenCards.add(cardId);
+                    document.getElementById('balance').textContent = `${balance.toFixed(2)} ETB`;
+                    buildCardsGrid();
+                    displayMyCards();
+                    document.getElementById('myCardsSection').classList.remove('hidden');
+                    if (socket?.connected) socket.emit('card_purchased', { roomId: currentRoomId, cardId, userId: telegramId });
+                    checkAndStartCountdown();
+                    updateWalletPage();
+                    showPopup(`✅ Card #${cardId} purchased!`);
+                } else showPopup(`❌ ${result.message || 'Failed'}`);
+            } catch(e) { showPopup('❌ Network error.'); }
+        }
+        function displayMyCards() {
+            const c = document.getElementById('myCardsList');
+            c.innerHTML = '';
+            myCards.forEach(card => {
+                const d = document.createElement('div');
+                d.style.cssText = 'background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 10px; margin-bottom: 8px;';
+                let h = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;margin-bottom:6px;">';
+                ['#2b88ff','#6b72ff','#c547ff','#00d68f','#ff7b1c'].forEach((col, i) => { h += `<div style="text-align:center;font-weight:900;font-size:11px;color:#fff;background:${col};border-radius:4px;padding:2px;">${BINGO_LETTERS[i]}</div>`; });
+                h += '</div>';
+                let g = '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:2px;">';
+                for (let r = 0; r < 5; r++) for (let c2 = 0; c2 < 5; c2++) {
+                    const v = card.grid[r][c2]; const f = v === 0;
+                    g += `<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:${f ? '#10b981' : 'rgba(255,255,255,0.06)'};border:1px solid rgba(255,255,255,0.08);border-radius:6px;font-size:11px;font-weight:800;color:#fff;">${f ? '★' : v}</div>`;
+                }
+                g += '</div>';
+                d.innerHTML = `<div style="font-size:11px;font-weight:900;margin-bottom:6px;text-align:center;color:#facc15;letter-spacing:0.1em;text-transform:uppercase;">Cartela # ${card.id}</div>${h}${g}`;
+                c.appendChild(d);
+            });
+        }
+        function updateDerashDisplay() {
+            const d = totalPrizePool * WINNER_PERCENTAGE;
+            document.getElementById('derashAmount').textContent = d.toFixed(2);
+            document.getElementById('infoDerash').textContent = d.toFixed(0);
+        }
+        function startLocalCountdown(from) {
+            if (countdownAlreadyStarted || gameStarted) return;
+            countdownAlreadyStarted = true;
+            stopCountdown();
+            localCountdown = from || COUNTDOWN_START;
+            const sess = gameSessionId;
+            document.getElementById('countdownSection').classList.remove('hidden');
+            document.getElementById('countdownTimer').textContent = localCountdown;
+            countdownInterval = setInterval(() => {
+                if (sess !== gameSessionId || gameStarted) { stopCountdown(); return; }
+                localCountdown--;
+                if (localCountdown <= 0) {
+                    stopCountdown();
+                    document.getElementById('countdownSection').classList.add('hidden');
+                    countdownAlreadyStarted = false;
+                    if (sess === gameSessionId && !gameStarted) launchBingoGameInterface();
+                } else document.getElementById('countdownTimer').textContent = localCountdown;
+            }, 1000);
+        }
+        function stopCountdown() { if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; } }
+        function launchBingoGameInterface() {
+            if (gameStarted) return;
+            gameStarted = true; gameActive = true; winnerDeclared = false;
+            playStartSound();
+            document.getElementById('cardSelectionArea').classList.add('hidden');
+            document.getElementById('myCardsSection').classList.add('hidden');
+            document.getElementById('countdownSection').classList.add('hidden');
+            document.getElementById('playersInRoomSection').classList.add('hidden');
+            document.getElementById('bingoGameInterface').classList.remove('hidden');
+            calledNumbers = []; markedCells = new Set();
+            currentBall = null; previousBall = null; previousBall2 = null;
+            document.getElementById('infoGameId').textContent = gameId || '—';
+            document.getElementById('infoPlayers').textContent = playersInRoom;
+            document.getElementById('infoBet').textContent = BET_AMOUNT;
+            document.getElementById('infoCalled').textContent = '0';
+            renderBingoGrid(); renderPlayerCardsMini(); updateDerashDisplay();
+            if (socket?.connected) socket.emit('request_game_seed', { roomId: currentRoomId, userId: telegramId });
+            else { roomSeed = Date.now(); startCallingNumbers(); }
+        }
+        function renderBingoGrid() {
+            const g = document.getElementById('bingoGrid');
+            g.innerHTML = '';
+            for (let row = 0; row < 15; row++) for (let col = 0; col < 5; col++) {
+                const l = BINGO_LETTERS[col]; const r = BINGO_RANGES[l];
+                const n = r.min + row;
+                const c = document.createElement('div');
+                c.className = 'number-cell'; c.id = `grid-${l}-${n}`; c.textContent = n;
+                g.appendChild(c);
+            }
+        }
+        function renderPlayerCardsMini() {
+            const c = document.getElementById('playerCardsMini');
+            c.innerHTML = '';
+            myCards.forEach(card => {
+                const w = document.createElement('div'); w.className = 'mini-card-wrapper';
+                let h = '<div class="mini-card-grid" style="margin-bottom:2px;">';
+                ['#2b88ff','#6b72ff','#c547ff','#00d68f','#ff7b1c'].forEach((col, i) => { h += `<div class="mini-card-header" style="background:${col};color:#fff;">${BINGO_LETTERS[i]}</div>`; });
+                h += '</div>';
+                let g = '<div class="mini-card-grid">';
+                for (let r = 0; r < 5; r++) for (let c2 = 0; c2 < 5; c2++) {
+                    const v = card.grid[r][c2]; const f = v === 0;
+                    const m = markedCells.has(`${card.id}-${r}-${c2}`);
+                    const cor = (r===0&&c2===0)||(r===0&&c2===4)||(r===4&&c2===0)||(r===4&&c2===4);
+                    g += `<div class="mini-cell ${f?'free':''} ${m?'called':''} ${cor?'corner':''}">${f?'★':v}</div>`;
+                }
+                g += '</div>';
+                w.innerHTML = `<div style="text-align:center;font-size:7px;font-weight:900;color:#facc15;margin-bottom:2px;letter-spacing:0.1em;">#${card.id}</div>${h}${g}`;
+                c.appendChild(w);
+            });
+        }
+        function isCornerComplete(card) {
+            const corners = [[0,0],[0,4],[4,0],[4,4]];
+            return corners.every(([r,c]) => { const v = card.grid[r][c]; return v === 0 || markedCells.has(`${card.id}-${r}-${c}`); });
+        }
+        function autoCheckBingo() {
+            if (winnerDeclared || !gameStarted) return;
+            for (const card of myCards) {
+                let found = false, name = '';
+                for (let r = 0; r < 5; r++) { let ok = true;
+                    for (let c = 0; c < 5; c++) if (card.grid[r][c] !== 0 && !markedCells.has(`${card.id}-${r}-${c}`)) { ok = false; break; }
+                    if (ok) { found = true; name = `Row ${r+1}`; break; }
+                }
+                if (!found) for (let c = 0; c < 5; c++) { let ok = true;
+                    for (let r = 0; r < 5; r++) if (card.grid[r][c] !== 0 && !markedCells.has(`${card.id}-${r}-${c}`)) { ok = false; break; }
+                    if (ok) { found = true; name = `Column ${c+1}`; break; }
+                }
+                if (!found) {
+                    let d1 = true, d2 = true;
+                    for (let i = 0; i < 5; i++) {
+                        if (card.grid[i][i] !== 0 && !markedCells.has(`${card.id}-${i}-${i}`)) d1 = false;
+                        if (card.grid[i][4-i] !== 0 && !markedCells.has(`${card.id}-${i}-${4-i}`)) d2 = false;
+                    }
+                    if (d1 || d2) { found = true; name = 'Diagonal'; }
+                }
+                if (!found && isCornerComplete(card)) { found = true; name = 'Four Corners'; }
+                if (found) { playWinnerSound(); declareWinner(card.id, name, card); return; }
+            }
+        }
+        function declareWinner(cardId, patternName, card) {
+            if (winnerDeclared) return;
+            winnerDeclared = true;
+            if (numberCallInterval) { clearInterval(numberCallInterval); numberCallInterval = null; }
+            const d = totalPrizePool * WINNER_PERCENTAGE;
+            if (socket?.connected) socket.emit('bingo_winner', {
+                roomId: currentRoomId, userId: telegramId, firstName, cardId, patternName,
+                prizePool: totalPrizePool, winnerAmount: d, cardGrid: card.grid, totalCardsPurchased
+            });
+            document.getElementById('winnerName').textContent = `${firstName} (You)`;
+            document.getElementById('winnerCard').textContent = `Card #${cardId} - ${patternName}`;
+            document.getElementById('winnerPrizeText').textContent = `Prize: ${d.toFixed(2)} ETB`;
+            document.getElementById('winnerCardDisplay').innerHTML = renderLargeCardHTML(card);
+            document.getElementById('winnerModal').classList.remove('hidden');
+            playWinnerSound();
+
+            // Record stats
+            userGamesWon++;
+            userTotalWon += d;
+            recentHistory.unshift({
+                date: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+                won: true,
+                prize: d
+            });
+            if (recentHistory.length > 20) recentHistory.pop();
+            updateStatsPages();
+
+            setTimeout(() => { closeWinnerModal(); autoReloadGame(); }, 5000);
+        }
+        function renderLargeCardHTML(card) {
+            let h = '<div class="winner-card-large-grid" style="margin-bottom:4px;">';
+            ['#2b88ff','#6b72ff','#c547ff','#00d68f','#ff7b1c'].forEach((col, i) => { h += `<div class="winner-card-large-header" style="background:${col};color:#fff;border-radius:4px;">${BINGO_LETTERS[i]}</div>`; });
+            h += '</div><div class="winner-card-large-grid">';
+            for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+                const v = card.grid[r][c]; const f = v === 0;
+                h += `<div class="winner-card-large-cell ${f?'free':''}">${f?'★':v}</div>`;
+            }
+            h += '</div>';
+            return h;
+        }
+        function closeWinnerModal() { document.getElementById('winnerModal').classList.add('hidden'); }
+        function refreshBoard() { renderBingoGrid(); renderPlayerCardsMini(); showPopup('🔄 Board refreshed'); }
+        function startCallingNumbers() {
+            if (numberCallInterval) clearInterval(numberCallInterval);
+            const nums = roomSeed ? generateSynchronizedNumbers(roomSeed) : (() => {
+                const a = []; for (let i = 1; i <= 75; i++) a.push(i);
+                for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+                return a;
+            })();
+            let idx = 0;
+            numberCallInterval = setInterval(() => {
+                if (winnerDeclared || idx >= nums.length) { clearInterval(numberCallInterval); return; }
+                const n = nums[idx]; const l = getLetterFromNumber(n);
+                playNumberSound(l, n);
+                processCalledNumber(l, n);
+                autoCheckBingo();
+                idx++;
+            }, 3000);
+        }
+        function processCalledNumber(letter, number) {
+            previousBall2 = previousBall; previousBall = currentBall;
+            currentBall = { number, letter };
+            calledNumbers.push(number);
+            document.getElementById('currentNumberDisplay').textContent = `${letter}-${number}`;
+            document.getElementById('prevNumber1').textContent = previousBall ? `${previousBall.letter}-${previousBall.number}` : '—';
+            document.getElementById('prevNumber2').textContent = previousBall2 ? `${previousBall2.letter}-${previousBall2.number}` : '—';
+            document.getElementById('infoCalled').textContent = calledNumbers.length;
+            markNumberOnGrid(letter, number);
+            markNumberOnCards(number);
+        }
+        function getLetterFromNumber(n) {
+            if (n <= 15) return 'B'; if (n <= 30) return 'I'; if (n <= 45) return 'N'; if (n <= 60) return 'G'; return 'O';
+        }
+        function markNumberOnGrid(letter, number) {
+            if (previousBall) {
+                const p = document.getElementById(`grid-${previousBall.letter}-${previousBall.number}`);
+                if (p) { p.classList.remove('orange'); p.classList.add('called'); }
+            }
+            const e = document.getElementById(`grid-${letter}-${number}`);
+            if (e) { e.classList.add('orange'); e.classList.add('called'); }
+        }
+        function markNumberOnCards(number) {
+            myCards.forEach(card => {
+                for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) {
+                    if (card.grid[r][c] === number) markedCells.add(`${card.id}-${r}-${c}`);
+                }
+            });
+            renderPlayerCardsMini();
+        }
+        function initSocket() {
+            try {
+                socket = io(BACKEND_URL, { transports: ['polling'], reconnection: true });
+                socket.on('connect', () => {
+                    if (currentGame === 'bingo' && hasJoinedRoom)
+                        socket.emit('join_game', { userId: telegramId, roomId: currentRoomId, userData: { firstName, balance } });
+                });
+                socket.on('balance_updated', d => {
+                    if (d.userId === telegramId) {
+                        balance = d.balance;
+                        document.getElementById('balance').textContent = `${balance.toFixed(2)} ETB`;
+                        document.getElementById('kenoBalance').textContent = balance.toFixed(2) + ' ETB';
+                        updateWalletPage();
+                    }
+                });
+                socket.on('player_joined', d => {
+                    if (d.roomId === currentRoomId && currentGame === 'bingo') {
+                        playersInRoom = d.playerCount || 0;
+                        document.getElementById('onlinePlayersCount').textContent = playersInRoom;
+                        document.getElementById('countdownPlayers').textContent = playersWithCards;
+                    }
+                });
+                socket.on('player_left', d => {
+                    if (d.roomId === currentRoomId && currentGame === 'bingo') {
+                        playersInRoom = d.playerCount || 0;
+                        document.getElementById('onlinePlayersCount').textContent = playersInRoom;
+                        document.getElementById('countdownPlayers').textContent = playersWithCards;
+                    }
+                });
+                socket.on('card_taken', d => {
+                    if (d.roomId === currentRoomId) {
+                        if (d.userId !== telegramId) { takenCards.add(d.cardId); playersWithCards++; }
+                        if (d.totalCardsPurchased !== undefined) { totalCardsPurchased = d.totalCardsPurchased; updatePrizePoolDisplay(); }
+                        buildCardsGrid(); checkAndStartCountdown();
+                    }
+                });
+                socket.on('sync_taken_cards', d => {
+                    if (d.roomId === currentRoomId && d.takenCards) {
+                        d.takenCards.forEach(c => takenCards.add(c));
+                        if (d.totalCardsPurchased !== undefined) { totalCardsPurchased = d.totalCardsPurchased; updatePrizePoolDisplay(); }
+                        if (d.playersWithCards !== undefined) playersWithCards = d.playersWithCards;
+                        buildCardsGrid(); checkAndStartCountdown();
+                    }
+                });
+                socket.on('prize_pool_update', d => {
+                    if (d.roomId === currentRoomId) {
+                        totalCardsPurchased = d.totalCardsPurchased || 0;
+                        if (d.playersWithCards !== undefined) { playersWithCards = d.playersWithCards; document.getElementById('countdownPlayers').textContent = playersWithCards; }
+                        updatePrizePoolDisplay(); checkAndStartCountdown();
+                    }
+                });
+                socket.on('countdown_started', d => {
+                    if (d.roomId === currentRoomId && !gameStarted && !countdownAlreadyStarted) startLocalCountdown(d.countdown || COUNTDOWN_START);
+                });
+                socket.on('countdown_update', d => {
+                    if (d.roomId === currentRoomId && d.countdown !== undefined) {
+                        localCountdown = d.countdown;
+                        document.getElementById('countdownTimer').textContent = d.countdown;
+                    }
+                });
+                socket.on('countdown_cancelled', d => {
+                    if (d.roomId === currentRoomId) { stopCountdown(); countdownAlreadyStarted = false; document.getElementById('countdownSection').classList.add('hidden'); }
+                });
+                socket.on('game_starting', d => {
+                    if (d.roomId === currentRoomId && !gameStarted) {
+                        if (d.seed) roomSeed = d.seed;
+                        if (d.totalCardsPurchased !== undefined) { totalCardsPurchased = d.totalCardsPurchased; updatePrizePoolDisplay(); }
+                        launchBingoGameInterface();
+                    }
+                });
+                socket.on('game_seed', d => { if (d.roomId === currentRoomId) { roomSeed = d.seed; startCallingNumbers(); } });
+                socket.on('number_called', d => {
+                    if (d.roomId === currentRoomId && currentGame === 'bingo') { processCalledNumber(d.letter, d.number); playNumberSound(d.letter, d.number); }
+                });
+                socket.on('winner_announced', d => {
+                    if (d.roomId === currentRoomId) {
+                        winnerDeclared = true;
+                        if (numberCallInterval) { clearInterval(numberCallInterval); numberCallInterval = null; }
+                        playWinnerSound();
+                        document.getElementById('winnerName').textContent = d.firstName;
+                        document.getElementById('winnerCard').textContent = `Card #${d.cardId} - ${d.patternName}`;
+                        document.getElementById('winnerPrizeText').textContent = `Prize: ${d.winnerAmount.toFixed(2)} ETB`;
+                        if (d.cardGrid) document.getElementById('winnerCardDisplay').innerHTML = renderLargeCardHTML({ grid: d.cardGrid });
+                        document.getElementById('winnerModal').classList.remove('hidden');
+                        setTimeout(() => { closeWinnerModal(); autoReloadGame(); }, 5000);
+                    }
+                });
+                socket.on('rooms_update', rooms => {
+                    if (rooms && Array.isArray(rooms)) rooms.forEach(r => {
+                        if (r.id === currentRoomId) { playersInRoom = r.playerCount || 0; document.getElementById('onlinePlayersCount').textContent = playersInRoom; }
+                    });
+                });
+            } catch(e) { console.error('Socket init error:', e); }
+        }
+        document.getElementById('resetBtn').addEventListener('click', resetAllCards);
+        function resetAllCards() {
+            if (myCards.length === 0) return;
+            const refund = myCards.length * BET_AMOUNT;
+            myCards.forEach(card => takenCards.delete(card.id));
+            myCards = [];
+            buildCardsGrid();
+            document.getElementById('myCardsSection').classList.add('hidden');
+            document.getElementById('countdownSection').classList.add('hidden');
+            document.getElementById('myCardsList').innerHTML = '';
+            if (socket?.connected) socket.emit('card_reset', { roomId: currentRoomId, userId: telegramId });
+            countdownAlreadyStarted = false;
+            stopCountdown();
+            updateWalletPage();
+            showPopup(`🔄 Refunded ${refund} ETB - Balance will update from server`);
+        }
+        if (window.Telegram?.WebApp) { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }
+        window.showGameSelection = showGameSelection;
+        window.startBingoGame = startBingoGame;
+        window.startKenoGame = startKenoGame;
+        window.backToGameSelection = backToGameSelection;
+        window.closeWinnerModal = closeWinnerModal;
+        window.refreshBoard = refreshBoard;
+        window.kenoChangeBet = kenoChangeBet;
+        window.kenoQuickPick = kenoQuickPick;
+        window.kenoClearSelection = kenoClearSelection;
+        window.kenoPlaceBet = kenoPlaceBet;
+        initialize();
+    </script>
+</body>
+</html>
