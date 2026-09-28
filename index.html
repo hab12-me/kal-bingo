@@ -1466,6 +1466,8 @@
             hasJoinedRoom = true;
             if (socket?.connected) {
                 socket.emit('join_game', { userId: telegramId, roomId: currentRoomId, userData: { firstName, balance } });
+                // Start countdown immediately even if no cards selected yet
+                checkAndStartCountdown();
             } else {
                 hasJoinedRoom = false;
                 setTimeout(joinBingoRoom, 500);
@@ -1489,6 +1491,11 @@
             document.getElementById('selectedCardCount').textContent = `${myCards.length}/2`;
             document.getElementById('cardCount').textContent = myCards.length;
             document.getElementById('myCardsCount').textContent = myCards.length;
+            // Ensure local player counts toward playersWithCards
+            if (myCards.length > 0 && playersWithCards < 1) {
+                playersWithCards = Math.max(playersWithCards, 1);
+            }
+            document.getElementById('countdownPlayers').textContent = playersWithCards;
         }
         function updatePrizePoolDisplay() {
             totalPrizePool = totalCardsPurchased * BET_AMOUNT;
@@ -1497,7 +1504,7 @@
             updateWalletPage();
         }
         function checkAndStartCountdown() {
-            if (playersWithCards >= 2 && !gameStarted && !countdownAlreadyStarted) startLocalCountdown(COUNTDOWN_START);
+            if (!gameStarted && !countdownAlreadyStarted) startLocalCountdown(COUNTDOWN_START);
         }
         async function purchaseCard(cardId) {
             if (gameStarted) { showPopup('🎮 Game already started!'); return; }
@@ -1563,6 +1570,17 @@
                 localCountdown--;
                 if (localCountdown <= 0) {
                     stopCountdown();
+                    // If no player has selected any cards, restart countdown again
+                    if (playersWithCards < 1 && myCards.length < 1 && !gameStarted) {
+                        countdownAlreadyStarted = false;
+                        // small delay then restart countdown
+                        setTimeout(() => {
+                            if (sess === gameSessionId && !gameStarted) {
+                                startLocalCountdown(COUNTDOWN_START);
+                            }
+                        }, 500);
+                        return;
+                    }
                     document.getElementById('countdownSection').classList.add('hidden');
                     countdownAlreadyStarted = false;
                     if (sess === gameSessionId && !gameStarted) launchBingoGameInterface();
@@ -1846,6 +1864,11 @@
             stopCountdown();
             updateWalletPage();
             showPopup(`🔄 Refunded ${refund} ETB - Balance will update from server`);
+            // Restart countdown since no cards are selected now
+            if (!gameStarted) {
+                countdownAlreadyStarted = false;
+                checkAndStartCountdown();
+            }
         }
         if (window.Telegram?.WebApp) { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); }
         window.showGameSelection = showGameSelection;
